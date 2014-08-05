@@ -1,0 +1,28 @@
+apply plugin: 'com.android.application'
+
+android {
+    compileSdkVersion 18
+    buildToolsVersion '20.0.0'
+    defaultConfig {
+        applicationId 'com.example.wzwang.syncmessage'
+        minSdkVersion 15
+        targetSdkVersion 18
+        versionCode 1
+        versionName '1.0'
+    }
+    buildTypes {
+        release {
+            runProguard false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+    productFlavors {
+    }
+}
+
+dependencies {
+    compile fileTree(dir: 'libs', include: ['*.jar'])
+    compile "org.java-websocket:Java-WebSocket:1.3.0"
+    compile 'com.google.code.gson:gson:1.7.2'
+    compile "com.android.support:support-v4:18.0.+"
+}
