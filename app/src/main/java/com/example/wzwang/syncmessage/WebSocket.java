@@ -31,7 +31,7 @@ public enum WebSocket {
     private String IMEI = null;
     private String IMSI = null;
     private SendingMessage msg;
-    private String URI = "ws://192.168.1.107:1337";
+    private String URI = "ws://www.lifeincode.net:1337";
     private LocalBroadcastManager broadcastManager;
     private LinkedBlockingQueue<Message> msgQueue = new LinkedBlockingQueue<Message>(10);
     private LinkedBlockingQueue<RequestMessage> smsQueue = new LinkedBlockingQueue<RequestMessage>();
