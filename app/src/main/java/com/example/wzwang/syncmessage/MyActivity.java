@@ -6,12 +6,14 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.database.ContentObserver;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteException;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
+import android.preference.PreferenceManager;
 import android.telephony.TelephonyManager;
 import android.util.Log;
 import android.view.Menu;
@@ -21,6 +23,7 @@ import android.widget.TextView;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.Map;
 
 import android.support.v4.content.LocalBroadcastManager;
 
@@ -36,6 +39,7 @@ public class MyActivity extends Activity {
         LocalBroadcastManager.getInstance(this).registerReceiver(onNotice, iff);
 
     }
+
 
     protected void onDestroy() {
         super.onDestroy();
@@ -176,9 +180,10 @@ public class MyActivity extends Activity {
     public boolean onCreateOptionsMenu(Menu menu) {
         // Inflate the menu; this adds items to the action bar if it is present.
         getMenuInflater().inflate(R.menu.my, menu);
-
         return true;
     }
+
+
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
@@ -187,7 +192,9 @@ public class MyActivity extends Activity {
         // as you specify a parent activity in AndroidManifest.xml.
         int id = item.getItemId();
         if (id == R.id.action_settings) {
-            return true;
+            Intent intent = new Intent(this, Settings.class);
+            startActivity(intent);
+            return false;
         }
         return super.onOptionsItemSelected(item);
     }
@@ -199,7 +206,7 @@ public class MyActivity extends Activity {
             int login = 0;
             if(intent.getAction().equals(".loginStatus")){
                 login = intent.getIntExtra("login", 0);
-                if (login == 404) {
+                if (login == 201) {
                     Intent it= new Intent(getApplicationContext(), SubmitUsername.class);
                     startActivityForResult(it, 0);
                 } else if (login == 200) {
@@ -214,6 +221,12 @@ public class MyActivity extends Activity {
     };
 
     public void connectToServer(View view) {
+        SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(this);
+        boolean testMode = preferences.getBoolean("test_mode", false);
+        if (!testMode) {
+            String address = preferences.getString("ws_server", "");
+            WebSocket.INSTANCE.setURI(address);
+        }
         WebSocket.INSTANCE.setBroadcastManager(LocalBroadcastManager.getInstance(getApplicationContext()));
         TelephonyManager tm = (TelephonyManager) getSystemService(Context.TELEPHONY_SERVICE);
         String imei = tm.getDeviceId();

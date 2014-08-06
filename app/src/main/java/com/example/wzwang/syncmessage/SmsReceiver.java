@@ -25,13 +25,11 @@ public class SmsReceiver extends BroadcastReceiver {
         } else {
             // send all SMS via XMPP by sender
             for (String sender : msg.keySet()) {
-                Message newMessage = new Message();
-                newMessage.fromNumber = sender;
-                newMessage.content = msg.get(sender).getText();
-                newMessage.time = msg.get(sender).getTime();
-                Gson gson = new Gson();
-                Log.d("SMSreceiver.java", gson.toJson(newMessage));
-                WebSocket.INSTANCE.pushMsg(newMessage);
+                Sms sms = new Sms();
+                sms.fromNumber = sender;
+                sms.text = msg.get(sender).getText();
+                sms.time = msg.get(sender).getTime();
+                WebSocket.INSTANCE.pushReportingSms(sms);
             }
         }
     }
@@ -58,16 +56,11 @@ public class SmsReceiver extends BroadcastReceiver {
 
                     // Check if index with number exists
                     if (!msg.containsKey(originatinAddress)) {
-                        // Index with number doesn't exist
-                        // Save string into associative array with sender number as index
                         MsgTextTime newMessage = new MsgTextTime(String.valueOf(msgs[i].getTimestampMillis()));
                         newMessage.addText(msgs[i].getMessageBody());
                         msg.put(msgs[i].getOriginatingAddress(), newMessage);
 
                     } else {
-                        // Number has been there, add content but consider that
-                        // msg.get(originatinAddress) already contains sms:sndrNbr:previousparts of SMS,
-                        // so just add the part of the current PDU
                         msg.get(originatinAddress).addText(msgs[i].getMessageBody());
                     }
                 }

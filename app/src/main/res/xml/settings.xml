@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+    <EditTextPreference
+        android:key="ws_server"
+        android:title="Websocket server"
+        android:summary="The address of websocket server."
+        android:defaultValue="ws://www.lifeincode.net:2945"
+        android:dialogTitle="Websocket server">
+    </EditTextPreference>
+    <CheckBoxPreference
+        android:key="test_mode"
+        android:title="Local Testing"
+        android:summary="Use local testing server." >
+    </CheckBoxPreference>
+</PreferenceScreen>

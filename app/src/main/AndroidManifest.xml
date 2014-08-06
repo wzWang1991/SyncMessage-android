@@ -34,6 +34,11 @@
             android:label="@string/title_activity_submit_username" >
         </activity>
 
+        <activity
+            android:name=".Settings"
+            android:label="Settings" >
+        </activity>
+
         <service
             android:name=".BackgroundService"
             android:enabled="true"

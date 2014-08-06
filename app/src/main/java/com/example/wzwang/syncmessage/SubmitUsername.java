@@ -21,7 +21,7 @@ public class SubmitUsername extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_submit_username);
-        IntentFilter iff= new IntentFilter(".regUserStatus");
+        IntentFilter iff = new IntentFilter(".regUserStatus");
         LocalBroadcastManager.getInstance(this).registerReceiver(onNotice, iff);
     }
 
@@ -46,7 +46,7 @@ public class SubmitUsername extends Activity {
     }
 
     public void sendUsername(View view) {
-        EditText usernameText = (EditText)findViewById(R.id.username);
+        EditText usernameText = (EditText) findViewById(R.id.username);
         String username = usernameText.getText().toString();
         if (username.length() == 0) {
             return;
@@ -54,15 +54,15 @@ public class SubmitUsername extends Activity {
         WebSocket.INSTANCE.sendUsername(username);
     }
 
-    private BroadcastReceiver onNotice= new BroadcastReceiver() {
+    private BroadcastReceiver onNotice = new BroadcastReceiver() {
 
         @Override
         public void onReceive(Context context, Intent intent) {
             int regUser = 0;
-            if(intent.getAction().equals(".regUserStatus")){
+            if (intent.getAction().equals(".regUserStatus")) {
                 regUser = intent.getIntExtra("regUser", 0);
-                if (regUser == 502) {
-                    Intent it=new Intent();
+                if (regUser == 202) {
+                    Intent it = new Intent();
                     intent.putExtra("regStatus", 0);
                     SubmitUsername.this.setResult(0, intent);
                     SubmitUsername.this.finish();

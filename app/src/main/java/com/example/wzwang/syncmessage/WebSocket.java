@@ -12,13 +12,17 @@ import android.support.v4.content.LocalBroadcastManager;
 import com.google.gson.Gson;
 
 import org.java_websocket.client.WebSocketClient;
+import org.java_websocket.exceptions.WebsocketNotConnectedException;
 import org.java_websocket.handshake.ServerHandshake;
 
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.List;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.logging.Handler;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+
 
 /**
  * Created by wzwang on 14-7-26.
@@ -30,15 +34,22 @@ public enum WebSocket {
     private boolean isLogin = false;
     private String IMEI = null;
     private String IMSI = null;
-    private SendingMessage msg;
-    private String URI = "ws://www.lifeincode.net:1337";
+    private String URI = "ws://192.168.1.107:2945";
     private LocalBroadcastManager broadcastManager;
-    private LinkedBlockingQueue<Message> msgQueue = new LinkedBlockingQueue<Message>(10);
-    private LinkedBlockingQueue<RequestMessage> smsQueue = new LinkedBlockingQueue<RequestMessage>();
-    ThreadSendingMsg tmsg = new ThreadSendingMsg();
-    Thread thread = new Thread(tmsg);
+    private LinkedBlockingQueue<Sms> reportSmsQueue = new LinkedBlockingQueue<Sms>();
+    private LinkedBlockingQueue<Sms> smsQueue = new LinkedBlockingQueue<Sms>();
+    private LinkedBlockingQueue<MsgPacket> sendingMsgQueue = new LinkedBlockingQueue<MsgPacket>();
+    private Object sendingMsgCondition = new Object();
+    private int heartInterval = 15000;
+    ThreadSyncSms threadSyncSms = new ThreadSyncSms();
+    Thread thread = new Thread(threadSyncSms);
     ThreadSendingSMS tsmsSender = new ThreadSendingSMS();
     Thread threadSMS = new Thread(tsmsSender);
+    HeartBeat heartBeat = new HeartBeat();
+    Thread threadHeartBeat = new Thread(heartBeat);
+    SendingMsgPacket sendingMsgPacket = new SendingMsgPacket();
+    Thread threadSendingMessage = new Thread(sendingMsgPacket);
+
 
 
     private final String TAG= "com.example.wzwang.syncmessage.WebSocket";
@@ -53,10 +64,16 @@ public enum WebSocket {
             e.printStackTrace();
             return;
         }
+        if (!threadSendingMessage.isAlive())
+            threadSendingMessage.start();
         mWebSocketClient = new WebSocketClient(uri) {
             @Override
             public void onOpen(ServerHandshake serverHandshake) {
                 Log.i("Websocket", "Opened");
+                synchronized (sendingMsgCondition) {
+                    isConnect = true;
+                    sendingMsgCondition.notify();
+                }
                 sendPhoneInfo();
             }
 
@@ -64,28 +81,43 @@ public enum WebSocket {
             public void onMessage(String message) {
                 Log.i("Websocket", message);
                 Gson parser = new Gson();
-                if (!isLogin) {
-                    ReceivingMessage loginMsg = parser.fromJson(message, ReceivingMessage.class);
-                    int loginStatus = loginMsg.login;
-
+                MsgPacket msg = parser.fromJson(message, MsgPacket.class);
+                if (msg.req == 0) {
+                    //Return packet
                     Intent newIntent = new Intent();
-                    newIntent.putExtra("login", loginStatus);
-                    newIntent.setAction(".loginStatus");
-                    if (loginStatus == 200) {
-                        isLogin = true;
-                        newIntent.putExtra("username", loginMsg.username);
-                        startSendingMsg();
-                    } else
-                        isLogin = false;
-                    if (loginStatus == 405) {
-                        newIntent.setAction(".regUserStatus");
-                        newIntent.putExtra("regUser", loginMsg.setUser);
+                    switch (msg.ret) {
+                        case 200:
+                            //Login successfully.
+                            isLogin = true;
+                            newIntent.setAction(".loginStatus");
+                            newIntent.putExtra("login", 200);
+                            newIntent.putExtra("username", msg.username);
+                            broadcastManager.sendBroadcast(newIntent);
+                            startSendingMsg();
+                            break;
+                        case 201:
+                            // No such user
+                            newIntent.setAction(".loginStatus");
+                            newIntent.putExtra("login", 201);
+                            broadcastManager.sendBroadcast(newIntent);
+                            break;
+                        case 202:
+                            // Set user successfully.
+                            newIntent.setAction(".regUserStatus");
+                            newIntent.putExtra("regUser", 202);
+                            broadcastManager.sendBroadcast(newIntent);
+                            break;
+                        case 203:
+                            // No such user.
+                            break;
+                        default:
+                            break;
                     }
-                    broadcastManager.sendBroadcast(newIntent);
                 } else {
-                    RequestMessage req = parser.fromJson(message, RequestMessage.class);
-                    if (req.req == 600) {
-                        smsQueue.offer(req);
+                    if (msg.req == 500) {
+                        if (isLogin) {
+                            smsQueue.offer(msg.sms);
+                        }
                     }
                 }
             }
@@ -93,6 +125,7 @@ public enum WebSocket {
             @Override
             public void onClose(int i, String s, boolean b) {
                 isConnect = false;
+                isLogin = false;
                 Log.i("Websocket", "Closed " + s);
             }
 
@@ -113,12 +146,7 @@ public enum WebSocket {
         try {
             this.IMEI = IMEI;
             this.IMSI = IMSI;
-            this.msg = new SendingMessage();
-            msg.IMSI = IMSI;
-            msg.IMEI = IMEI;
             mWebSocketClient.connect();
-            isConnect = true;
-
             return true;
         } catch (IllegalStateException e) {
             //e.printStackTrace();
@@ -131,12 +159,18 @@ public enum WebSocket {
     }
 
     private void sendPhoneInfo() {
-        SendingMessage message = new SendingMessage();
-        message.IMEI = this.IMEI;
-        message.IMSI = this.IMSI;
-        message.login = true;
-        Gson gson = new Gson();
-        send(gson.toJson(message));
+        MsgPacket newMsg = MsgPacket.generateLoginMessage();
+        newMsg.IMSI = IMSI;
+        newMsg.IMEI = IMEI;
+        addMsgPacketToQueue(newMsg);
+    }
+
+    public void addMsgPacketToQueue(MsgPacket msg) {
+        try {
+            sendingMsgQueue.put(msg);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
     }
 
 
@@ -144,14 +178,28 @@ public enum WebSocket {
         return isConnect;
     }
 
-    public void send(String msg) {
+    private void send(String msg) {
         if (isConnect)
             mWebSocketClient.send(msg);
+        else {
+            connect(IMEI, IMSI);
+            mWebSocketClient.send(msg);
+        }
     }
 
-    public void send(SendingMessage msg) {
-        Gson gson = new Gson();
-        send(gson.toJson(msg));
+
+    Gson gson = new Gson();
+    private void send(MsgPacket msg) {
+        String msgString = gson.toJson(msg);
+        try {
+            send(msgString);
+        } catch (WebsocketNotConnectedException exception) {
+            try {
+                sendingMsgQueue.put(msg);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
     }
 
     public void setBroadcastManager(LocalBroadcastManager broadcastManager) {
@@ -172,40 +220,37 @@ public enum WebSocket {
         this.IMSI = IMSI;
     }
 
-    public void sendUsername(String username) {
-        msg.login = true;
-        msg.setUser = true;
-        msg.user = username;
-        send(msg);
-    }
 
-    public class ThreadSendingMsg implements Runnable {
+    public class ThreadSyncSms implements Runnable {
         public void run() {
             while (true) {
-                Message msg = null;
+                Sms msg = null;
                 try {
-                    msg = msgQueue.take();
-                    SendingMessage syncMessage = new SendingMessage();
-                    syncMessage.msg = msg;
-                    send(syncMessage);
+                    msg = reportSmsQueue.take();
+                    if (msg != null) {
+                        MsgPacket smsPacket = MsgPacket.generateReportingSmsMessage(msg);
+                        sendingMsgQueue.put(smsPacket);
+                    }
                 } catch (InterruptedException e) {
-                    if (msgQueue.isEmpty())
+                    if (reportSmsQueue.isEmpty())
                         break;
                 }
-
-                System.out.println(msg.content);
             }
         }
     }
 
     private void startSendingMsg() {
-        thread.start();
-        threadSMS.start();
+        if (!thread.isAlive())
+            thread.start();
+        if (threadSMS.isAlive())
+            threadSMS.start();
+        if (threadSendingMessage.isAlive())
+            threadHeartBeat.start();
     }
 
-    public void pushMsg(Message msg) {
+    public void pushReportingSms(Sms sms) {
         try {
-            this.msgQueue.put(msg);
+            this.reportSmsQueue.put(sms);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
@@ -214,7 +259,7 @@ public enum WebSocket {
     public class ThreadSendingSMS implements Runnable {
         public void run() {
             while (true) {
-                RequestMessage msg = null;
+                Sms msg = null;
                 try {
                     msg = smsQueue.take();
                     sendSMS(msg);
@@ -226,15 +271,77 @@ public enum WebSocket {
         }
     }
 
-    public void sendSMS(RequestMessage msg) {
+    public class HeartBeat implements Runnable {
+        public void run() {
+            while (true) {
+                sendHeartBeat();
+                try {
+                    Thread.sleep(heartInterval);
+                } catch (InterruptedException e) {
+                    continue;
+                }
+            }
+        }
+    }
+
+    public void sendSMS(Sms msg) {
         SmsManager smsManager = SmsManager.getDefault();
         List<String> texts =smsManager.divideMessage(msg.text);
         for (int i = 0; i < texts.size(); i++) {
             String text = texts.get(i);
             if (text == null || text.length() == 0)
                 continue;
-            smsManager.sendTextMessage(msg.number, null, text, null, null);
+            smsManager.sendTextMessage(msg.toNumber, null, text, null, null);
         }
+    }
+
+    private void sendHeartBeat() {
+        if (isConnect) {
+            MsgPacket heartbeat = MsgPacket.generateHeartBeatMessage();
+            try {
+                sendingMsgQueue.put(heartbeat);
+            } catch (InterruptedException e) {
+                return;
+            }
+        } else {
+            connect(IMEI, IMSI);
+        }
+    }
+
+
+
+    public void setURI(String uri) {
+        this.URI = uri;
+    }
+
+    public class SendingMsgPacket implements Runnable {
+        public void run() {
+            while (true) {
+                synchronized (sendingMsgCondition) {
+                    while (!isConnect) {
+                        try {
+                            sendingMsgCondition.wait();
+                            if (isConnect)
+                                break;
+                        } catch (InterruptedException e) {
+                            continue;
+                        }
+                    }
+                }
+                MsgPacket msg = null;
+                try {
+                        msg = sendingMsgQueue.take();
+                        send(msg);
+                } catch (InterruptedException e) {
+                    continue;
+                }
+            }
+        }
+    }
+
+    public void sendUsername(String username) {
+        MsgPacket msg = MsgPacket.generateUserRegMessage(username);
+        addMsgPacketToQueue(msg);
     }
 
 }
