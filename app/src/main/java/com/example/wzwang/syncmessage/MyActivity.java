@@ -3,6 +3,7 @@ package com.example.wzwang.syncmessage;
 import android.app.Activity;
 import android.content.BroadcastReceiver;
 import android.content.ContentResolver;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -49,89 +50,13 @@ public class MyActivity extends Activity {
 
     private ContentObserver newMmsContentObserver = new ContentObserver(new Handler()) {
         public void onChange(boolean selfChange) {
-            int mNewSmsCount = getNewSmsCount() + getNewMmsCount();
-
+            setSmsAsReaded();
             TextView myTextView = (TextView)findViewById(R.id.test);
-            myTextView.setText(String.valueOf(mNewSmsCount));
+            myTextView.setText("New message synchronized!");
 
         }
     };
 
-
-    public String getSmsInPhone()
-    {
-        final String SMS_URI_ALL   = "content://sms/";
-        final String SMS_URI_INBOX = "content://sms/inbox";
-        final String SMS_URI_SEND  = "content://sms/sent";
-        final String SMS_URI_DRAFT = "content://sms/draft";
-
-        StringBuilder smsBuilder = new StringBuilder();
-
-        try{
-            ContentResolver cr = getContentResolver();
-            String[] projection = new String[]{"_id", "address", "person",
-                    "body", "date", "type"};
-            Uri uri = Uri.parse(SMS_URI_ALL);
-            Cursor cur = cr.query(uri, projection, null, null, "date desc");
-
-            if (cur.moveToFirst()) {
-                String name;
-                String phoneNumber;
-                String smsbody;
-                String date;
-                String type;
-                String read;
-
-                int nameColumn = cur.getColumnIndex("person");
-                int phoneNumberColumn = cur.getColumnIndex("address");
-                int smsbodyColumn = cur.getColumnIndex("body");
-                int dateColumn = cur.getColumnIndex("date");
-                int typeColumn = cur.getColumnIndex("type");
-                int readColumn = cur.getColumnIndex("read");
-
-                do{
-                    read = cur.getString(readColumn);
-                    if (read.equals("0")) {
-                        name = cur.getString(nameColumn);
-                        phoneNumber = cur.getString(phoneNumberColumn);
-                        smsbody = cur.getString(smsbodyColumn);
-
-                        SimpleDateFormat dateFormat = new SimpleDateFormat(
-                                "yyyy-MM-dd hh:mm:ss");
-                        Date d = new Date(Long.parseLong(cur.getString(dateColumn)));
-                        date = dateFormat.format(d);
-
-                        int typeId = cur.getInt(typeColumn);
-                        if(typeId == 1){
-                            type = "接收";
-                        } else if(typeId == 2){
-                            type = "发送";
-                        } else {
-                            type = "";
-                        }
-
-                        smsBuilder.append("[");
-                        smsBuilder.append(name+",");
-                        smsBuilder.append(phoneNumber+",");
-                        smsBuilder.append(smsbody+",");
-                        smsBuilder.append(date+",");
-                        smsBuilder.append(type);
-                        smsBuilder.append("] ");
-
-                        if(smsbody == null) smsbody = "";
-                    }
-
-                } while(cur.moveToNext());
-            } else {
-                smsBuilder.append("no result!");
-            }
-
-            smsBuilder.append("getSmsInPhone has executed!");
-        } catch(SQLiteException ex) {
-            Log.d("SQLiteException in getSmsInPhone", ex.getMessage());
-        }
-        return smsBuilder.toString();
-    }
 
     private void registerObserver() {
         unregisterObserver();
@@ -154,26 +79,18 @@ public class MyActivity extends Activity {
         }
     }
 
-    private int getNewSmsCount() {
-        int result = 0;
+    private void setSmsAsReaded() {
         Cursor csr = getContentResolver().query(Uri.parse("content://sms"), null,
                 "type = 1 and read = 0", null, null);
         if (csr != null) {
-            result = csr.getCount();
-            csr.close();
+            while (csr.moveToNext()) {
+                String SmsMessageId = csr.getString(csr.getColumnIndex("_id"));
+                ContentValues values = new ContentValues();
+                values.put("read", true);
+                getApplicationContext().getContentResolver().update(Uri.parse("content://sms/inbox"), values, "_id=" + SmsMessageId, null);
+            }
         }
-        return result;
-    }
-    private int getNewMmsCount() {
-        int result = 0;
-        Cursor csr = getContentResolver().query(Uri.parse("content://mms/inbox"),
-                null, "read = 0", null, null);
-        if (csr != null) {
-            result = csr.getCount();
-            csr.close();
-        }
-
-        return result;
+        csr.close();
     }
 
     @Override
